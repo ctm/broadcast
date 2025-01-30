@@ -19,11 +19,11 @@ pub enum Route {
     Server,
 }
 
-trait Yyy: Component {
+trait ConstructsProcessor: Component {
     fn construct_processor(link: &Scope<Self>) -> impl FnMut(&ChannelMessage) + 'static;
 }
 
-struct SessionChannel<T: Yyy> {
+struct SessionChannel<T: ConstructsProcessor> {
     channel: BroadcastChannel,
     _listener: EventListener,
     component_type: PhantomData<T>,
@@ -36,15 +36,15 @@ fn origin() -> &'static str {
         .as_str()
 }
 
-impl<T: Yyy> SessionChannel<T> {
+impl<T: ConstructsProcessor> SessionChannel<T> {
     fn new(link: &Scope<T>) -> Self {
         let channel = BroadcastChannel::new(CHANNEL_NAME).unwrap();
-        let mut yyy = T::construct_processor(link);
+        let mut process = T::construct_processor(link);
         let _listener = EventListener::new(&channel, "message", move |event| {
             let event = event.unchecked_ref::<MessageEvent>();
             if event.origin() == origin() {
                 if let Ok(f) = serde_wasm_bindgen::from_value::<ChannelMessage>(event.data()) {
-                    yyy(&f);
+                    process(&f);
                     event.stop_immediate_propagation();
                 }
             }
@@ -59,6 +59,10 @@ impl<T: Yyy> SessionChannel<T> {
     fn send_session_id(&self) {
         todo!()
     }
+
+    fn request_session_id(&self) {
+        todo!()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -68,7 +72,7 @@ enum ChannelMessage {
 }
 
 mod server {
-    use super::{ChannelMessage, SessionChannel, Yyy};
+    use super::{ChannelMessage, SessionChannel, ConstructsProcessor};
     use yew::{html::Scope, prelude::*};
 
     pub(super) struct Server {
@@ -79,7 +83,7 @@ mod server {
         SessionIdRequested,
     }
 
-    impl Yyy for Server {
+    impl ConstructsProcessor for Server {
         fn construct_processor(link: &Scope<Self>) -> impl FnMut(&ChannelMessage) + 'static {
             move |message| todo!()
         }
@@ -113,7 +117,7 @@ mod server {
 }
 
 mod client {
-    use super::{ChannelMessage, SessionChannel, Yyy};
+    use super::{ChannelMessage, SessionChannel, ConstructsProcessor};
     use gloo_timers::callback::Timeout;
     use yew::{html::Scope, prelude::*};
 
@@ -128,7 +132,7 @@ mod client {
         GaveUp,
     }
 
-    impl Yyy for Client {
+    impl ConstructsProcessor for Client {
         fn construct_processor(link: &Scope<Self>) -> impl FnMut(&ChannelMessage) + 'static {
             move |message| todo!()
         }
@@ -139,10 +143,14 @@ mod client {
         type Properties = ();
         fn create(ctx: &Context<Self>) -> Self {
             let channel = SessionChannel::new(&ctx.link());
-            let link = ctx.link().clone();
-            let timeout = Timeout::new(100, move || {
-                link.send_message(Msg::TimedOut);
-            });
+            channel.request_session_id();
+            let timeout = {
+                let link = ctx.link().clone();
+
+                Timeout::new(100, move || {
+                    link.send_message(Msg::TimedOut);
+                })
+            };
             Self::Trying(channel, timeout)
         }
 
