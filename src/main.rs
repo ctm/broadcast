@@ -2,7 +2,7 @@ use {
     gloo_events::EventListener,
     std::marker::PhantomData,
     web_sys::BroadcastChannel,
-    yew::{prelude::*, html::Scope},
+    yew::{html::Scope, prelude::*},
     yew_router::prelude::*,
 };
 
@@ -43,13 +43,15 @@ impl<T: TransformChannelMessage> SessionChannel<T> {
     }
 }
 
-#[derive(Clone, Copy)] enum ChannelMessage { WhatIsMySessionId,
-SessionIdIs(u64), }
+#[derive(Clone, Copy, Debug)]
+enum ChannelMessage {
+    WhatIsMySessionId,
+    SessionIdIs(u64),
+}
 
 mod server {
-    use crate::TransformChannelMessage;
-
     use super::{ChannelMessage, SessionChannel};
+    use crate::TransformChannelMessage;
     use yew::prelude::*;
 
     pub(super) struct Server {
@@ -94,7 +96,62 @@ mod server {
 }
 
 mod client {
+    use super::{ChannelMessage, SessionChannel};
+    use crate::TransformChannelMessage;
+    use gloo_timers::callback::Timeout;
+    use yew::prelude::*;
 
+    enum Msg {
+        IdIs(u64),
+        TimedOut,
+    }
+
+    enum Client {
+        Trying(SessionChannel<Self>, Timeout),
+        SessionId(u64),
+        GaveUp,
+    }
+
+    impl TransformChannelMessage for Client {
+        fn transform_channel_message(message: &ChannelMessage) -> Self::Message {
+            if let ChannelMessage::SessionIdIs(id) = message {
+                Msg::IdIs(*id)
+            } else {
+                unreachable!("gotL {message:?}");
+            }
+        }
+    }
+
+    impl Component for Client {
+        type Message = Msg;
+        type Properties = ();
+        fn create(ctx: &Context<Self>) -> Self {
+            let channel = SessionChannel::new(ChannelMessage::SessionIdIs, &ctx.link());
+            let link = ctx.link().clone();
+            let timeout = Timeout::new(100, move || {
+                link.send_message(Msg::TimedOut);
+            });
+            Self::Trying(channel, timeout)
+        }
+
+        fn update(&mut self, _ctx: &Context<Self>, msg: Self::Message) -> bool {
+            match msg {
+                Msg::IdIs(id) => *self = Self::SessionId(id),
+                Msg::TimedOut => *self = Self::GaveUp,
+            }
+            false
+        }
+
+        fn view(&self, _ctx: &Context<Self>) -> Html {
+            html! {
+                <main>
+                    <img class="logo" src="https://yew.rs/img/logo.png" alt="Yew logo" />
+                    <h1>{ "Hello World!" }</h1>
+                    <span class="subtitle">{ "from Yew with " }<i class="heart" /></span>
+                    </main>
+            }
+        }
+    }
 }
 
 fn main() {
