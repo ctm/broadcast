@@ -1,7 +1,9 @@
 use {
     gloo_events::EventListener,
-    std::marker::PhantomData,
-    web_sys::BroadcastChannel,
+    serde::{Deserialize, Serialize},
+    std::{marker::PhantomData, sync::OnceLock},
+    wasm_bindgen::JsCast,
+    web_sys::{BroadcastChannel, MessageEvent},
     yew::{html::Scope, prelude::*},
     yew_router::prelude::*,
 };
@@ -17,20 +19,36 @@ pub enum Route {
     Server,
 }
 
-trait TransformChannelMessage: Component {
-    fn transform_channel_message(message: &ChannelMessage) -> Self::Message;
+trait Yyy: Component {
+    fn construct_processor(link: &Scope<Self>) -> impl FnMut(&ChannelMessage) + 'static;
 }
 
-struct SessionChannel<T: Component> {
+struct SessionChannel<T: Yyy> {
     channel: BroadcastChannel,
     _listener: EventListener,
     component_type: PhantomData<T>,
 }
 
-impl<T: TransformChannelMessage> SessionChannel<T> {
-    fn new(receive: ChannelMessage, link: &Scope<T>) -> Self {
+fn origin() -> &'static str {
+    static ORIGIN: OnceLock<String> = OnceLock::new();
+    ORIGIN
+        .get_or_init(|| gloo_utils::window().origin())
+        .as_str()
+}
+
+impl<T: Yyy> SessionChannel<T> {
+    fn new(link: &Scope<T>) -> Self {
         let channel = BroadcastChannel::new(CHANNEL_NAME).unwrap();
-        let _listener = EventListener::new(&channel, "message", move |event| todo!());
+        let mut yyy = T::construct_processor(link);
+        let _listener = EventListener::new(&channel, "message", move |event| {
+            let event = event.unchecked_ref::<MessageEvent>();
+            if event.origin() == origin() {
+                if let Ok(f) = serde_wasm_bindgen::from_value::<ChannelMessage>(event.data()) {
+                    yyy(&f);
+                    event.stop_immediate_propagation();
+                }
+            }
+        });
         Self {
             channel,
             _listener,
@@ -43,16 +61,15 @@ impl<T: TransformChannelMessage> SessionChannel<T> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 enum ChannelMessage {
     WhatIsMySessionId,
     SessionIdIs(u64),
 }
 
 mod server {
-    use super::{ChannelMessage, SessionChannel};
-    use crate::TransformChannelMessage;
-    use yew::prelude::*;
+    use super::{ChannelMessage, SessionChannel, Yyy};
+    use yew::{html::Scope, prelude::*};
 
     pub(super) struct Server {
         channel: SessionChannel<Self>,
@@ -62,9 +79,9 @@ mod server {
         SessionIdRequested,
     }
 
-    impl TransformChannelMessage for Server {
-        fn transform_channel_message(_message: &ChannelMessage) -> Self::Message {
-            Msg::SessionIdRequested
+    impl Yyy for Server {
+        fn construct_processor(link: &Scope<Self>) -> impl FnMut(&ChannelMessage) + 'static {
+            move |message| todo!()
         }
     }
 
@@ -73,7 +90,7 @@ mod server {
         type Properties = ();
 
         fn create(ctx: &Context<Self>) -> Self {
-            let channel = SessionChannel::new(ChannelMessage::WhatIsMySessionId, &ctx.link());
+            let channel = SessionChannel::new(&ctx.link());
             Self { channel }
         }
 
@@ -96,10 +113,9 @@ mod server {
 }
 
 mod client {
-    use super::{ChannelMessage, SessionChannel};
-    use crate::TransformChannelMessage;
+    use super::{ChannelMessage, SessionChannel, Yyy};
     use gloo_timers::callback::Timeout;
-    use yew::prelude::*;
+    use yew::{html::Scope, prelude::*};
 
     enum Msg {
         IdIs(u64),
@@ -112,13 +128,9 @@ mod client {
         GaveUp,
     }
 
-    impl TransformChannelMessage for Client {
-        fn transform_channel_message(message: &ChannelMessage) -> Self::Message {
-            if let ChannelMessage::SessionIdIs(id) = message {
-                Msg::IdIs(*id)
-            } else {
-                unreachable!("gotL {message:?}");
-            }
+    impl Yyy for Client {
+        fn construct_processor(link: &Scope<Self>) -> impl FnMut(&ChannelMessage) + 'static {
+            move |message| todo!()
         }
     }
 
@@ -126,7 +138,7 @@ mod client {
         type Message = Msg;
         type Properties = ();
         fn create(ctx: &Context<Self>) -> Self {
-            let channel = SessionChannel::new(ChannelMessage::SessionIdIs, &ctx.link());
+            let channel = SessionChannel::new(&ctx.link());
             let link = ctx.link().clone();
             let timeout = Timeout::new(100, move || {
                 link.send_message(Msg::TimedOut);
