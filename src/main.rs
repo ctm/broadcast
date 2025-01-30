@@ -1,4 +1,10 @@
-use {gloo_events::EventListener, web_sys::BroadcastChannel, yew_router::prelude::*};
+use {
+    gloo_events::EventListener,
+    std::marker::PhantomData,
+    web_sys::BroadcastChannel,
+    yew::{prelude::*, html::Scope},
+    yew_router::prelude::*,
+};
 
 const CHANNEL_NAME: &str = "session-server";
 
@@ -11,29 +17,68 @@ pub enum Route {
     Server,
 }
 
+trait TransformChannelMessage: Component {
+    fn transform_channel_message(message: &ChannelMessage) -> Self::Message;
+}
+
+struct SessionChannel<T: Component> {
+    channel: BroadcastChannel,
+    _listener: EventListener,
+    component_type: PhantomData<T>,
+}
+
+impl<T: TransformChannelMessage> SessionChannel<T> {
+    fn new(receive: ChannelMessage, link: &Scope<T>) -> Self {
+        let channel = BroadcastChannel::new(CHANNEL_NAME).unwrap();
+        let _listener = EventListener::new(&channel, "message", move |event| todo!());
+        Self {
+            channel,
+            _listener,
+            component_type: PhantomData,
+        }
+    }
+
+    fn send_session_id(&self) {
+        todo!()
+    }
+}
+
+#[derive(Clone, Copy)] enum ChannelMessage { WhatIsMySessionId,
+SessionIdIs(u64), }
+
 mod server {
-    use super::{BroadcastChannel, EventListener, CHANNEL_NAME};
+    use crate::TransformChannelMessage;
+
+    use super::{ChannelMessage, SessionChannel};
     use yew::prelude::*;
 
     pub(super) struct Server {
-        channel: BroadcastChannel,
-        _listener: EventListener,
+        channel: SessionChannel<Self>,
     }
 
-    pub(super) enum Msg {}
+    pub(super) enum Msg {
+        SessionIdRequested,
+    }
+
+    impl TransformChannelMessage for Server {
+        fn transform_channel_message(_message: &ChannelMessage) -> Self::Message {
+            Msg::SessionIdRequested
+        }
+    }
 
     impl Component for Server {
         type Message = Msg;
         type Properties = ();
 
-        fn create(_ctx: &Context<Self>) -> Self {
-            let channel = BroadcastChannel::new(CHANNEL_NAME).unwrap();
-            let _listener = EventListener::new(&channel, "message", move |event| todo!());
-            Self { channel, _listener }
+        fn create(ctx: &Context<Self>) -> Self {
+            let channel = SessionChannel::new(ChannelMessage::WhatIsMySessionId, &ctx.link());
+            Self { channel }
         }
 
-        fn update(&mut self, _ctx: &Context<Self>, _msg: Self::Message) -> bool {
-            true
+        fn update(&mut self, _ctx: &Context<Self>, msg: Self::Message) -> bool {
+            let Msg::SessionIdRequested = msg;
+            self.channel.send_session_id();
+            false
         }
 
         fn view(&self, _ctx: &Context<Self>) -> Html {
@@ -49,11 +94,7 @@ mod server {
 }
 
 mod client {
-    use super::{EventListener, CHANNEL_NAME};
 
-    struct Client {
-        _channel: EventListener,
-    }
 }
 
 fn main() {
