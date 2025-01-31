@@ -36,7 +36,7 @@ mod server {
         type Properties = ();
 
         fn create(ctx: &Context<Self>) -> Self {
-            let session_id = 42; // Default::default();
+            let session_id = Default::default();
             let update_timer = {
                 let link = ctx.link().clone();
                 Interval::new(1_000, move || link.send_message(()))
@@ -44,15 +44,16 @@ mod server {
 
             Self {
                 session_id,
-                sender: IdSender::new(Some(session_id)),
+                sender: IdSender::new(None),
                 update_timer,
             }
         }
 
         fn update(&mut self, _ctx: &Context<Self>, _msg: Self::Message) -> bool {
             self.session_id += 1;
-            log::info!("session_id: {}", self.session_id);
-            self.sender.update(Some(self.session_id));
+            if self.session_id > 2 {
+                self.sender.update(Some(self.session_id));
+            }
             true
         }
 
