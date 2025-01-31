@@ -24,6 +24,9 @@ pub(super) enum Error {
 
     #[error("to_value failed: {0:?}")]
     ToValueFailed(#[from] serde_wasm_bindgen::Error),
+
+    #[error("post_message failed: {0:?}")]
+    PostMessage(JsValue),
 }
 
 impl Error {
@@ -72,9 +75,10 @@ impl IdChannel {
         self._listener = Self::mk_listener(&self.channel, doit);
     }
 
-    fn send(&self, message: &Message) {
-        let message = serde_wasm_bindgen::to_value(message).unwrap();
-        self.channel.post_message(&message).unwrap();
+    fn send(&self, message: &Message) -> Result<()> {
+        self.channel
+            .post_message(&message.try_into()?)
+            .map_err(Error::PostMessage)
     }
 
     fn mk_listener(
