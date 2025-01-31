@@ -13,11 +13,6 @@ use {
 
 const CHANNEL_NAME: &str = "session-sharer";
 
-// It doesn't convey to the caller when there's been a timeout.  As
-// such, there is flashing when the screen is refreshed.
-//
-// TODO: pass up the Timeout
-
 #[derive(Debug, Error)]
 pub(super) enum Error {
     #[error("BroadcastChannel::new failed: {0:?}")]
@@ -148,10 +143,16 @@ impl IdReceiver {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub(super) enum Passthrough {
     Id(Option<SessionId>),
     TimedOut,
+}
+
+impl Passthrough {
+    pub(super) fn timed_out(&self) -> bool {
+        *self == Passthrough::TimedOut
+    }
 }
 
 enum Inner {

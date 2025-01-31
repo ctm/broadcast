@@ -96,6 +96,7 @@ mod client {
 
     pub(super) struct Client {
         source: Source,
+        timed_out: bool,
     }
 
     impl Component for Client {
@@ -104,22 +105,30 @@ mod client {
         fn create(ctx: &Context<Self>) -> Self {
             Self {
                 source: Source::new(ctx.link(), Msg::Passthrough),
+                timed_out: false,
             }
         }
 
         fn update(&mut self, _ctx: &Context<Self>, msg: Self::Message) -> bool {
             match msg {
-                Msg::Passthrough(pass) => self.source.update(pass),
+                Msg::Passthrough(pass) => {
+                    if pass.timed_out() {
+                        self.timed_out = true;
+                    }
+                    self.source.update(pass)
+                }
             }
             true
         }
 
         fn view(&self, _ctx: &Context<Self>) -> Html {
-            html! {
-                {
-                    match self.source.session_id() {
-                        Some(id) => html! { id },
-                        None => html! { "Not Logged In" },
+            match self.source.session_id() {
+                Some(id) => html! { id },
+                None => {
+                    if self.timed_out {
+                        html! { "Not Logged In" }
+                    } else {
+                        html! {}
                     }
                 }
             }
