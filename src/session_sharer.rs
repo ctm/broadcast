@@ -25,14 +25,14 @@ enum Message {
     Response(SessionId),
 }
 
+#[derive(Debug)]
 struct IdChannel {
     channel: BroadcastChannel,
     _listener: EventListener,
 }
 
 impl IdChannel {
-    fn new(doit: impl Fn(Message) + 'static) -> Self
-    {
+    fn new(doit: impl Fn(Message) + 'static) -> Self {
         let channel = BroadcastChannel::new(CHANNEL_NAME).unwrap();
         let _listener = EventListener::new(&channel, "message", move |event| {
             let event = event.unchecked_ref::<MessageEvent>();
@@ -42,10 +42,7 @@ impl IdChannel {
                 }
             }
         });
-        Self {
-            channel,
-            _listener,
-        }
+        Self { channel, _listener }
     }
 
     fn send(&self, message: &Message) {
@@ -54,11 +51,10 @@ impl IdChannel {
     }
 }
 
-
-struct IdSender(IdChannel);
+pub(crate) struct IdSender(IdChannel);
 
 impl IdSender {
-    fn new<T>(link: &Scope<T>, msg: T::Message) -> Self
+    pub(crate) fn new<T>(link: &Scope<T>, msg: T::Message) -> Self
     where
         T: Component,
         T::Message: Clone,
@@ -71,20 +67,24 @@ impl IdSender {
         }))
     }
 
-    fn send_id(&self, id: SessionId) {
+    pub(crate) fn send_id(&self, id: SessionId) {
         self.0.send(&Message::Response(id));
     }
 }
 
-struct IdReceiver(IdChannel, Timeout);
+#[derive(Debug)]
+pub(crate) struct IdReceiver(IdChannel, Timeout);
 
 impl IdReceiver {
-    fn new<T>(link: &Scope<T>, rcv: fn(SessionId) -> T::Message, tmo_msg: T::Message) -> Self
+    pub(crate) fn new<T>(
+        link: &Scope<T>,
+        rcv: fn(SessionId) -> T::Message,
+        tmo_msg: T::Message,
+    ) -> Self
     where
         T: Component,
         T::Message: Clone,
-{              
-                                       
+    {
         let channel = {
             let link = link.clone();
             IdChannel::new(move |message| {
@@ -93,7 +93,8 @@ impl IdReceiver {
                 }
             })
         };
-            
+        channel.send(&Message::Query);
+
         let timeout = {
             let link = link.clone();
             let tmo_msg = tmo_msg.clone();
@@ -102,9 +103,5 @@ impl IdReceiver {
             })
         };
         Self(channel, timeout)
-    }
-
-    fn request_id(&self, id: SessionId) {
-        self.0.send(&Message::Query);
     }
 }
