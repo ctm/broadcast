@@ -1,3 +1,5 @@
+#![deny(clippy::unwrap_used, clippy::expect_used)]
+
 use {
     session_sharer::{IdSender, Passthrough, Source},
     yew::prelude::*,
@@ -21,13 +23,14 @@ mod server {
     use {
         super::{IdSender, SessionId},
         gloo_timers::callback::Interval,
+        log::error,
         yew::prelude::*,
     };
 
     #[allow(dead_code)]
     pub(super) struct Server {
         session_id: SessionId,
-        sender: IdSender,
+        sender: Option<IdSender>,
         update_timer: Interval,
     }
 
@@ -37,6 +40,11 @@ mod server {
 
         fn create(ctx: &Context<Self>) -> Self {
             let session_id = Default::default();
+
+            let sender = IdSender::new(None)
+                .inspect_err(|e| error!("IdSender::new failed: {e}"))
+                .ok();
+
             let update_timer = {
                 let link = ctx.link().clone();
                 Interval::new(1_000, move || link.send_message(()))
@@ -44,7 +52,7 @@ mod server {
 
             Self {
                 session_id,
-                sender: IdSender::new(None),
+                sender,
                 update_timer,
             }
         }
@@ -52,7 +60,9 @@ mod server {
         fn update(&mut self, _ctx: &Context<Self>, _msg: Self::Message) -> bool {
             self.session_id += 1;
             if self.session_id > 2 {
-                self.sender.update(Some(self.session_id));
+                if let Some(sender) = &mut self.sender {
+                    sender.update(Some(self.session_id));
+                }
             }
             true
         }

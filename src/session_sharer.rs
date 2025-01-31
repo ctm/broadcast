@@ -4,19 +4,35 @@ use {
     gloo_timers::callback::Timeout,
     serde::{Deserialize, Serialize},
     std::sync::OnceLock,
-    wasm_bindgen::JsCast,
+    thiserror::Error,
+    wasm_bindgen::{JsCast, JsValue},
     web_sys::{BroadcastChannel, MessageEvent},
     yew::{html::Scope, prelude::*},
 };
 
 const CHANNEL_NAME: &str = "session-sharer";
 
-// This proof-of-concept works, but has a few unwraps in it and also doesn't
-// convey to the caller when there's been a timeout.  As such, there is
-// flashing when the screen is refreshed.
+// It doesn't convey to the caller when there's been a timeout.  As
+// such, there is flashing when the screen is refreshed.
 //
 // TODO: pass up the Timeout
-//       get rid of the unwraps
+
+#[derive(Debug, Error)]
+pub(super) enum Error {
+    #[error("BroadcastChannel::new failed: {0:?}")]
+    BroadcastChannelNew(JsValue),
+
+    #[error("to_value failed: {0:?}")]
+    ToValueFailed(#[from] serde_wasm_bindgen::Error),
+}
+
+impl Error {
+    fn new_broadcast_channel(e: JsValue) -> Self {
+        Self::BroadcastChannelNew(e)
+    }
+}
+
+pub(super) type Result<O> = std::result::Result<O, Error>;
 
 fn origin() -> &'static str {
     static ORIGIN: OnceLock<String> = OnceLock::new();
@@ -31,6 +47,14 @@ enum Message {
     Response(Option<SessionId>),
 }
 
+impl TryFrom<&Message> for JsValue {
+    type Error = Error;
+
+    fn try_from(message: &Message) -> Result<JsValue> {
+        Ok(serde_wasm_bindgen::to_value(message)?)
+    }
+}
+
 #[derive(Debug)]
 struct IdChannel {
     channel: BroadcastChannel,
@@ -38,10 +62,10 @@ struct IdChannel {
 }
 
 impl IdChannel {
-    fn new(doit: impl Fn(Message, &BroadcastChannel) + 'static) -> Self {
-        let channel = BroadcastChannel::new(CHANNEL_NAME).unwrap();
+    fn new(doit: impl Fn(Message, &BroadcastChannel) + 'static) -> Result<Self> {
+        let channel = BroadcastChannel::new(CHANNEL_NAME).map_err(Error::new_broadcast_channel)?;
         let _listener = Self::mk_listener(&channel, doit);
-        Self { channel, _listener }
+        Ok(Self { channel, _listener })
     }
 
     fn update_listener(&mut self, doit: impl Fn(Message, &BroadcastChannel) + 'static) {
@@ -73,8 +97,8 @@ impl IdChannel {
 pub(super) struct IdSender(IdChannel);
 
 impl IdSender {
-    pub(super) fn new(id: Option<SessionId>) -> Self {
-        Self(IdChannel::new(Self::make_doit(id)))
+    pub(super) fn new(id: Option<SessionId>) -> Result<Self> {
+        Ok(Self(IdChannel::new(Self::make_doit(id))?))
     }
 
     pub(super) fn update(&mut self, id: Option<SessionId>) {
@@ -95,14 +119,14 @@ impl IdSender {
 struct IdReceiver(IdChannel, Timeout);
 
 impl IdReceiver {
-    fn new<T: Component>(link: &Scope<T>, pass: fn(Passthrough) -> T::Message) -> Self {
+    fn new<T: Component>(link: &Scope<T>, pass: fn(Passthrough) -> T::Message) -> Result<Self> {
         let channel = {
             let link = link.clone();
             IdChannel::new(move |message, _channel| {
                 if let Message::Response(id) = message {
                     link.send_message(pass(Passthrough::Id(id)));
                 }
-            })
+            })?
         };
         channel.send(&Message::Query);
 
@@ -112,7 +136,7 @@ impl IdReceiver {
                 link.send_message(pass(Passthrough::TimedOut));
             })
         };
-        Self(channel, timeout)
+        Ok(Self(channel, timeout))
     }
 }
 
@@ -124,7 +148,7 @@ pub(super) enum Passthrough {
 
 enum Inner {
     #[allow(dead_code)]
-    Trying(IdReceiver),
+    Trying(Result<IdReceiver>),
     SessionId(Option<SessionId>),
     GaveUp,
 }

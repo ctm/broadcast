@@ -22,3 +22,4 @@ gloo-utils = "0.2.0"
 serde = { version = "1.0.210", features = ["derive"] }
 console_log = "1.0.0"
 log = "0.4.25"
+thiserror = "2.0.11"
