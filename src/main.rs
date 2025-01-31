@@ -61,7 +61,13 @@ mod server {
             self.session_id += 1;
             if self.session_id > 2 {
                 if let Some(sender) = &mut self.sender {
-                    sender.update(Some(self.session_id));
+                    if let Err(e) = sender.update(Some(self.session_id)) {
+                        error!(
+                            "Updating sender with {:?} failed: {e:?} -- DISABLING Sender",
+                            self.session_id
+                        );
+                        self.sender = None;
+                    }
                 }
             }
             true

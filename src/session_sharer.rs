@@ -2,6 +2,7 @@ use {
     super::SessionId,
     gloo_events::EventListener,
     gloo_timers::callback::Timeout,
+    log::error,
     serde::{Deserialize, Serialize},
     std::sync::OnceLock,
     thiserror::Error,
@@ -102,20 +103,23 @@ pub(super) struct IdSender(IdChannel);
 
 impl IdSender {
     pub(super) fn new(id: Option<SessionId>) -> Result<Self> {
-        Ok(Self(IdChannel::new(Self::make_doit(id))?))
+        Ok(Self(IdChannel::new(Self::make_doit(id)?)?))
     }
 
-    pub(super) fn update(&mut self, id: Option<SessionId>) {
-        self.0.update_listener(Self::make_doit(id));
+    pub(super) fn update(&mut self, id: Option<SessionId>) -> Result<()> {
+        self.0.update_listener(Self::make_doit(id)?);
+        Ok(())
     }
 
-    fn make_doit(id: Option<SessionId>) -> impl Fn(Message, &BroadcastChannel) + 'static {
-        let to_send = serde_wasm_bindgen::to_value(&Message::Response(id)).unwrap();
-        move |message, channel| {
+    fn make_doit(id: Option<SessionId>) -> Result<impl Fn(Message, &BroadcastChannel) + 'static> {
+        let to_send: JsValue = (&Message::Response(id)).try_into()?;
+        Ok(move |message, channel: &BroadcastChannel| {
             if message == Message::Query {
-                channel.post_message(&to_send).unwrap();
+                let _ = channel
+                    .post_message(&to_send)
+                    .inspect_err(|e| error!("post_message(Response({id:?}) failed: {e:?}"));
             }
-        }
+        })
     }
 }
 
@@ -132,7 +136,7 @@ impl IdReceiver {
                 }
             })?
         };
-        channel.send(&Message::Query);
+        channel.send(&Message::Query)?;
 
         let timeout = {
             let link = link.clone();
