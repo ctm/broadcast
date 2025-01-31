@@ -8,6 +8,29 @@ use {
     yew_router::prelude::*,
 };
 
+mod session_sharer;
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+enum Message {
+    WhatIsMySessionId,
+    SessionIdIs(u64),
+}
+
+
+struct SessionServer {
+    channel: BroadcastChannel,
+    _listener: EventListener,
+}
+
+impl SessionServer {
+    fn new<T: Component>(msg: T::Message) -> Self {
+        todo!()
+    }
+    
+}
+
+
+
 const CHANNEL_NAME: &str = "session-server";
 
 #[derive(Clone, Debug, Eq, PartialEq, Routable)]
@@ -23,6 +46,7 @@ trait ConstructsProcessor: Component {
     fn construct_processor(link: &Scope<Self>) -> impl FnMut(&ChannelMessage) + 'static;
 }
 
+#[derive(Debug)]
 struct SessionChannel<T: ConstructsProcessor> {
     channel: BroadcastChannel,
     _listener: EventListener,
@@ -44,8 +68,9 @@ impl<T: ConstructsProcessor> SessionChannel<T> {
             let event = event.unchecked_ref::<MessageEvent>();
             if event.origin() == origin() {
                 if let Ok(f) = serde_wasm_bindgen::from_value::<ChannelMessage>(event.data()) {
+                    log::info!("f: {f:?}");
                     process(&f);
-                    event.stop_immediate_propagation();
+                    // event.stop_immediate_propagation();
                 }
             }
         });
@@ -57,15 +82,17 @@ impl<T: ConstructsProcessor> SessionChannel<T> {
     }
 
     fn send_session_id(&self) {
-        todo!()
+        let message = serde_wasm_bindgen::to_value(&ChannelMessage::SessionIdIs(42)).unwrap();
+        self.channel.post_message(&message).unwrap();
     }
 
     fn request_session_id(&self) {
-        todo!()
+        let message = serde_wasm_bindgen::to_value(&ChannelMessage::WhatIsMySessionId).unwrap();
+        self.channel.post_message(&message).unwrap();
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 enum ChannelMessage {
     WhatIsMySessionId,
     SessionIdIs(u64),
@@ -85,7 +112,10 @@ mod server {
 
     impl ConstructsProcessor for Server {
         fn construct_processor(link: &Scope<Self>) -> impl FnMut(&ChannelMessage) + 'static {
-            move |message| todo!()
+            let link = link.clone();
+            move |message| if *message == ChannelMessage::WhatIsMySessionId {
+                link.send_message(Msg::SessionIdRequested);
+            }
         }
     }
 
@@ -121,12 +151,13 @@ mod client {
     use gloo_timers::callback::Timeout;
     use yew::{html::Scope, prelude::*};
 
-    enum Msg {
+    pub(super) enum Msg {
         IdIs(u64),
         TimedOut,
     }
 
-    enum Client {
+    #[derive(Debug)]
+    pub(super) enum Client {
         Trying(SessionChannel<Self>, Timeout),
         SessionId(u64),
         GaveUp,
@@ -134,7 +165,12 @@ mod client {
 
     impl ConstructsProcessor for Client {
         fn construct_processor(link: &Scope<Self>) -> impl FnMut(&ChannelMessage) + 'static {
-            move |message| todo!()
+            let link = link.clone();
+            move |message| {
+                if let ChannelMessage::SessionIdIs(id)  = message {
+                    link.send_message(Msg::IdIs(*id));
+                }
+            }
         }
     }
 
@@ -147,7 +183,7 @@ mod client {
             let timeout = {
                 let link = ctx.link().clone();
 
-                Timeout::new(100, move || {
+                Timeout::new(10, move || {
                     link.send_message(Msg::TimedOut);
                 })
             };
@@ -159,21 +195,45 @@ mod client {
                 Msg::IdIs(id) => *self = Self::SessionId(id),
                 Msg::TimedOut => *self = Self::GaveUp,
             }
-            false
+            true
         }
 
         fn view(&self, _ctx: &Context<Self>) -> Html {
             html! {
-                <main>
-                    <img class="logo" src="https://yew.rs/img/logo.png" alt="Yew logo" />
-                    <h1>{ "Hello World!" }</h1>
-                    <span class="subtitle">{ "from Yew with " }<i class="heart" /></span>
-                    </main>
+                {
+                    match self {
+                        Self::Trying(..) => html!{},
+                        Self::SessionId(id) => html! { id},
+                        Self::GaveUp => html! { "Gave Up" },
+                    }
+                }
             }
         }
     }
 }
 
+fn switch(route: Route) -> Html {
+    use Route::*;
+
+    match route {
+        Client => html! { <client::Client /> },
+        Server => html! { <server::Server /> },
+    }
+}
+
+
+#[function_component(App)]
+pub fn app() -> Html {
+    html! {
+        <main>
+            <BrowserRouter>
+                <Switch<Route> render={switch} />
+            </BrowserRouter>
+        </main>
+    }
+}
+
 fn main() {
-    yew::Renderer::<server::Server>::new().render();
+    console_log::init_with_level(log::Level::Trace);
+    yew::Renderer::<App>::new().render();
 }
