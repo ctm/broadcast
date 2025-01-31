@@ -61,12 +61,22 @@ pub(crate) struct IdSender(IdChannel);
 
 impl IdSender {
     pub(crate) fn new(id: Option<SessionId>) -> Self {
+        Self(IdChannel::new(Self::make_doit(id)))
+    }
+
+    pub(crate) fn update(&mut self, id: Option<SessionId>) {
+        self.0.update_listener(Self::make_doit(id));
+    }
+
+    pub(crate) fn make_doit(
+        id: Option<SessionId>,
+    ) -> impl Fn(Message, &BroadcastChannel) + 'static {
         let to_send = serde_wasm_bindgen::to_value(&Message::Response(id)).unwrap();
-        Self(IdChannel::new(move |message, channel| {
+        move |message, channel| {
             if message == Message::Query {
                 channel.post_message(&to_send).unwrap();
             }
-        }))
+        }
     }
 }
 
