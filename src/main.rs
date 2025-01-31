@@ -18,18 +18,42 @@ pub enum Route {
 }
 
 mod server {
-    use super::IdSender;
-    use yew::prelude::*;
+    use {
+        super::{IdSender, SessionId},
+        gloo_timers::callback::Interval,
+        yew::prelude::*,
+    };
 
     #[allow(dead_code)]
-    pub(super) struct Server(IdSender);
+    pub(super) struct Server {
+        session_id: SessionId,
+        sender: IdSender,
+        update_timer: Interval,
+    }
 
     impl Component for Server {
         type Message = ();
         type Properties = ();
 
-        fn create(_ctx: &Context<Self>) -> Self {
-            Self(IdSender::new(Some(43)))
+        fn create(ctx: &Context<Self>) -> Self {
+            let session_id = 42; // Default::default();
+            let update_timer = {
+                let link = ctx.link().clone();
+                Interval::new(1_000, move || link.send_message(()))
+            };
+
+            Self {
+                session_id,
+                sender: IdSender::new(Some(session_id)),
+                update_timer,
+            }
+        }
+
+        fn update(&mut self, _ctx: &Context<Self>, _msg: Self::Message) -> bool {
+            self.session_id += 1;
+            log::info!("session_id: {}", self.session_id);
+            self.sender.update(Some(self.session_id));
+            true
         }
 
         fn view(&self, _ctx: &Context<Self>) -> Html {

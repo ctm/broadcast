@@ -52,7 +52,7 @@ impl IdChannel {
         doit: impl Fn(Message, &BroadcastChannel) + 'static,
     ) -> EventListener {
         let channel_clone = channel.clone();
-        EventListener::new(&channel, "message", move |event| {
+        EventListener::new(channel, "message", move |event| {
             let event = event.unchecked_ref::<MessageEvent>();
             if event.origin() == origin() {
                 if let Ok(f) = serde_wasm_bindgen::from_value::<Message>(event.data()) {
@@ -75,9 +75,7 @@ impl IdSender {
         self.0.update_listener(Self::make_doit(id));
     }
 
-    pub(crate) fn make_doit(
-        id: Option<SessionId>,
-    ) -> impl Fn(Message, &BroadcastChannel) + 'static {
+    fn make_doit(id: Option<SessionId>) -> impl Fn(Message, &BroadcastChannel) + 'static {
         let to_send = serde_wasm_bindgen::to_value(&Message::Response(id)).unwrap();
         move |message, channel| {
             if message == Message::Query {
