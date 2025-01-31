@@ -34,30 +34,37 @@ struct IdChannel {
 impl IdChannel {
     fn new(doit: impl Fn(Message, &BroadcastChannel) + 'static) -> Self {
         let channel = BroadcastChannel::new(CHANNEL_NAME).unwrap();
-        let _listener = {
-            let channel_clone = channel.clone();
-            EventListener::new(&channel, "message", move |event| {
-                let event = event.unchecked_ref::<MessageEvent>();
-                if event.origin() == origin() {
-                    if let Ok(f) = serde_wasm_bindgen::from_value::<Message>(event.data()) {
-                        doit(f, &channel_clone);
-                    }
-                }
-            })
-        };
+        let _listener = Self::mk_listener(&channel, doit);
         Self { channel, _listener }
+    }
+
+    fn update_listener(&mut self, doit: impl Fn(Message, &BroadcastChannel) + 'static) {
+        self._listener = Self::mk_listener(&self.channel, doit);
     }
 
     fn send(&self, message: &Message) {
         let message = serde_wasm_bindgen::to_value(message).unwrap();
         self.channel.post_message(&message).unwrap();
     }
+
+    fn mk_listener(
+        channel: &BroadcastChannel,
+        doit: impl Fn(Message, &BroadcastChannel) + 'static,
+    ) -> EventListener {
+        let channel_clone = channel.clone();
+        EventListener::new(&channel, "message", move |event| {
+            let event = event.unchecked_ref::<MessageEvent>();
+            if event.origin() == origin() {
+                if let Ok(f) = serde_wasm_bindgen::from_value::<Message>(event.data()) {
+                    doit(f, &channel_clone);
+                }
+            }
+        })
+    }
 }
 
 #[allow(dead_code)]
 pub(crate) struct IdSender(IdChannel);
-
-// TODO: provide a method for updating that SessionId.
 
 impl IdSender {
     pub(crate) fn new(id: Option<SessionId>) -> Self {
