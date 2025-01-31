@@ -67,6 +67,7 @@ mod client {
 
     #[derive(Debug)]
     pub(super) enum Client {
+        #[allow(dead_code)]
         Trying(IdReceiver),
         SessionId(u64),
         GaveUp,

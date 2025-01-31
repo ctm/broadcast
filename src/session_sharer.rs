@@ -72,6 +72,7 @@ impl IdSender {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) struct IdReceiver(IdChannel, Timeout);
 
