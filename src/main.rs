@@ -6,6 +6,8 @@ use {
 
 mod session_sharer;
 
+type SessionId = u64;
+
 #[derive(Clone, Debug, Eq, PartialEq, Routable)]
 pub enum Route {
     #[at("/client")]
@@ -27,7 +29,7 @@ mod server {
         type Properties = ();
 
         fn create(_ctx: &Context<Self>) -> Self {
-            Self(IdSender::new(43))
+            Self(IdSender::new(Some(43)))
         }
 
         fn view(&self, _ctx: &Context<Self>) -> Html {
@@ -43,12 +45,12 @@ mod server {
 }
 
 mod client {
-    use super::IdReceiver;
+    use super::{IdReceiver, SessionId};
     use yew::prelude::*;
 
     #[derive(Clone)]
     pub(super) enum Msg {
-        IdIs(u64),
+        IdIs(Option<SessionId>),
         TimedOut,
     }
 
@@ -56,7 +58,7 @@ mod client {
     pub(super) enum Client {
         #[allow(dead_code)]
         Trying(IdReceiver),
-        SessionId(u64),
+        SessionId(Option<u64>),
         GaveUp,
     }
 
@@ -80,7 +82,8 @@ mod client {
                 {
                     match self {
                         Self::Trying(..) => html!{},
-                        Self::SessionId(id) => html! { id},
+                        Self::SessionId(Some(id)) => html! { id },
+                        Self::SessionId(None) => html! { "Not Logged In" },
                         Self::GaveUp => html! { "Gave Up" },
                     }
                 }

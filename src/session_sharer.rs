@@ -22,7 +22,7 @@ fn origin() -> &'static str {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 enum Message {
     Query,
-    Response(SessionId),
+    Response(Option<SessionId>),
 }
 
 #[derive(Debug)]
@@ -57,11 +57,10 @@ impl IdChannel {
 #[allow(dead_code)]
 pub(crate) struct IdSender(IdChannel);
 
-// TODO: Make new take an Option<SessionId> and also provide a method for
-//       updating that SessionId.
+// TODO: provide a method for updating that SessionId.
 
 impl IdSender {
-    pub(crate) fn new(id: SessionId) -> Self {
+    pub(crate) fn new(id: Option<SessionId>) -> Self {
         let to_send = serde_wasm_bindgen::to_value(&Message::Response(id)).unwrap();
         Self(IdChannel::new(move |message, channel| {
             if message == Message::Query {
@@ -84,7 +83,7 @@ pub(crate) struct IdReceiver(IdChannel, Timeout);
 impl IdReceiver {
     pub(crate) fn new<T>(
         link: &Scope<T>,
-        rcv: fn(SessionId) -> T::Message,
+        rcv: fn(Option<SessionId>) -> T::Message,
         tmo_msg: T::Message,
     ) -> Self
     where
