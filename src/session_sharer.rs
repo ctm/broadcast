@@ -63,14 +63,14 @@ impl IdChannel {
 }
 
 #[allow(dead_code)]
-pub(crate) struct IdSender(IdChannel);
+pub(super) struct IdSender(IdChannel);
 
 impl IdSender {
-    pub(crate) fn new(id: Option<SessionId>) -> Self {
+    pub(super) fn new(id: Option<SessionId>) -> Self {
         Self(IdChannel::new(Self::make_doit(id)))
     }
 
-    pub(crate) fn update(&mut self, id: Option<SessionId>) {
+    pub(super) fn update(&mut self, id: Option<SessionId>) {
         self.0.update_listener(Self::make_doit(id));
     }
 
@@ -88,10 +88,7 @@ impl IdSender {
 struct IdReceiver(IdChannel, Timeout);
 
 impl IdReceiver {
-    pub fn new<T>(link: &Scope<T>, pass: fn(Passthrough) -> T::Message) -> Self
-    where
-        T: Component,
-    {
+    fn new<T: Component>(link: &Scope<T>, pass: fn(Passthrough) -> T::Message) -> Self {
         let channel = {
             let link = link.clone();
             IdChannel::new(move |message, _channel| {
@@ -113,28 +110,25 @@ impl IdReceiver {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum Passthrough {
+pub(super) enum Passthrough {
     Id(Option<SessionId>),
     TimedOut,
 }
 
-pub(crate) enum Source {
+enum Inner {
     #[allow(dead_code)]
     Trying(IdReceiver),
     SessionId(Option<SessionId>),
     GaveUp,
 }
 
-impl Source {
-    pub(crate) fn new<T>(link: &Scope<T>, pass: fn(Passthrough) -> T::Message) -> Self
-    where
-        T: Component,
-    {
+impl Inner {
+    fn new<T: Component>(link: &Scope<T>, pass: fn(Passthrough) -> T::Message) -> Self {
         Self::Trying(IdReceiver::new(link, pass))
     }
 
-    pub(crate) fn session_id(&self) -> Option<SessionId> {
-        use Source::*;
+    fn session_id(&self) -> Option<SessionId> {
+        use Inner::*;
 
         match self {
             Trying(_) | GaveUp => None,
@@ -142,12 +136,28 @@ impl Source {
         }
     }
 
-    pub(crate) fn update(&mut self, arg: Passthrough) {
+    fn update(&mut self, arg: Passthrough) {
         use Passthrough::*;
 
         match arg {
-            Id(id) => *self = Source::SessionId(id),
-            TimedOut => *self = Source::GaveUp,
+            Id(id) => *self = Inner::SessionId(id),
+            TimedOut => *self = Inner::GaveUp,
         }
+    }
+}
+
+pub(super) struct Source(Inner);
+
+impl Source {
+    pub(super) fn new<T: Component>(link: &Scope<T>, pass: fn(Passthrough) -> T::Message) -> Self {
+        Self(Inner::new(link, pass))
+    }
+
+    pub(super) fn session_id(&self) -> Option<SessionId> {
+        self.0.session_id()
+    }
+
+    pub(super) fn update(&mut self, arg: Passthrough) {
+        self.0.update(arg)
     }
 }
