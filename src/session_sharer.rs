@@ -11,6 +11,13 @@ use {
 
 const CHANNEL_NAME: &str = "session-sharer";
 
+// This proof-of-concept works, but has a few unwraps in it and also doesn't
+// convey to the caller when there's been a timeout.  As such, there is
+// flashing when the screen is refreshed.
+//
+// TODO: pass up the Timeout
+//       get rid of the unwraps
+
 fn origin() -> &'static str {
     static ORIGIN: OnceLock<String> = OnceLock::new();
     ORIGIN
