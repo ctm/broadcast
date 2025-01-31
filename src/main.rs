@@ -19,28 +19,15 @@ mod server {
     use super::IdSender;
     use yew::prelude::*;
 
-    pub(super) struct Server {
-        sender: IdSender,
-    }
-
-    #[derive(Clone, Copy)]
-    pub(super) enum Msg {
-        SessionIdRequested,
-    }
+    #[allow(dead_code)]
+    pub(super) struct Server(IdSender);
 
     impl Component for Server {
-        type Message = Msg;
+        type Message = ();
         type Properties = ();
 
-        fn create(ctx: &Context<Self>) -> Self {
-            let sender = IdSender::new(ctx.link(), Msg::SessionIdRequested);
-            Self { sender }
-        }
-
-        fn update(&mut self, _ctx: &Context<Self>, msg: Self::Message) -> bool {
-            let Msg::SessionIdRequested = msg;
-            self.sender.send_id(42);
-            false
+        fn create(_ctx: &Context<Self>) -> Self {
+            Self(IdSender::new(43))
         }
 
         fn view(&self, _ctx: &Context<Self>) -> Html {

@@ -32,16 +32,19 @@ struct IdChannel {
 }
 
 impl IdChannel {
-    fn new(doit: impl Fn(Message) + 'static) -> Self {
+    fn new(doit: impl Fn(Message, &BroadcastChannel) + 'static) -> Self {
         let channel = BroadcastChannel::new(CHANNEL_NAME).unwrap();
-        let _listener = EventListener::new(&channel, "message", move |event| {
-            let event = event.unchecked_ref::<MessageEvent>();
-            if event.origin() == origin() {
-                if let Ok(f) = serde_wasm_bindgen::from_value::<Message>(event.data()) {
-                    doit(f);
+        let _listener = {
+            let channel_clone = channel.clone();
+            EventListener::new(&channel, "message", move |event| {
+                let event = event.unchecked_ref::<MessageEvent>();
+                if event.origin() == origin() {
+                    if let Ok(f) = serde_wasm_bindgen::from_value::<Message>(event.data()) {
+                        doit(f, &channel_clone);
+                    }
                 }
-            }
-        });
+            })
+        };
         Self { channel, _listener }
     }
 
@@ -51,26 +54,28 @@ impl IdChannel {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) struct IdSender(IdChannel);
 
+// TODO: Make new take an Option<SessionId> and also provide a method for
+//       updating that SessionId.
+
 impl IdSender {
-    pub(crate) fn new<T>(link: &Scope<T>, msg: T::Message) -> Self
-    where
-        T: Component,
-        T::Message: Clone,
-    {
-        let link = link.clone();
-        Self(IdChannel::new(move |message| {
+    pub(crate) fn new(id: SessionId) -> Self {
+        let to_send = serde_wasm_bindgen::to_value(&Message::Response(id)).unwrap();
+        Self(IdChannel::new(move |message, channel| {
             if message == Message::Query {
-                link.send_message(msg.clone())
+                channel.post_message(&to_send).unwrap();
             }
         }))
     }
-
-    pub(crate) fn send_id(&self, id: SessionId) {
-        self.0.send(&Message::Response(id));
-    }
 }
+
+// TODO: Make the receiver be an enum that is like super::Client in
+// that it knows the session id itself.  It will then only need a
+// message that it sends when it transitions from Trying to SessionId
+// or GaveUp.  Then it can have a session_id method that returns an
+// Option<SessionId>.
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -88,7 +93,7 @@ impl IdReceiver {
     {
         let channel = {
             let link = link.clone();
-            IdChannel::new(move |message| {
+            IdChannel::new(move |message, _channel| {
                 if let Message::Response(id) = message {
                     link.send_message(rcv(id))
                 }
