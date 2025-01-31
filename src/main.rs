@@ -1,5 +1,5 @@
 use {
-    session_sharer::{IdReceiver, IdSender},
+    session_sharer::{IdSender, Passthrough, Source},
     yew::prelude::*,
     yew_router::prelude::*,
 };
@@ -8,7 +8,7 @@ mod session_sharer;
 
 type SessionId = u64;
 
-#[derive(Clone, Debug, Eq, PartialEq, Routable)]
+#[derive(Clone, Eq, PartialEq, Routable)]
 pub enum Route {
     #[at("/client")]
     Client,
@@ -70,34 +70,30 @@ mod server {
 }
 
 mod client {
-    use super::{IdReceiver, SessionId};
+    use super::{Passthrough, Source};
     use yew::prelude::*;
 
     #[derive(Clone)]
     pub(super) enum Msg {
-        IdIs(Option<SessionId>),
-        TimedOut,
+        Passthrough(Passthrough),
     }
 
-    #[derive(Debug)]
-    pub(super) enum Client {
-        #[allow(dead_code)]
-        Trying(IdReceiver),
-        SessionId(Option<u64>),
-        GaveUp,
+    pub(super) struct Client {
+        source: Source,
     }
 
     impl Component for Client {
         type Message = Msg;
         type Properties = ();
         fn create(ctx: &Context<Self>) -> Self {
-            Self::Trying(IdReceiver::new(ctx.link(), Msg::IdIs, Msg::TimedOut))
+            Self {
+                source: Source::new(ctx.link(), Msg::Passthrough),
+            }
         }
 
         fn update(&mut self, _ctx: &Context<Self>, msg: Self::Message) -> bool {
             match msg {
-                Msg::IdIs(id) => *self = Self::SessionId(id),
-                Msg::TimedOut => *self = Self::GaveUp,
+                Msg::Passthrough(pass) => self.source.update(pass),
             }
             true
         }
@@ -105,11 +101,9 @@ mod client {
         fn view(&self, _ctx: &Context<Self>) -> Html {
             html! {
                 {
-                    match self {
-                        Self::Trying(..) => html!{},
-                        Self::SessionId(Some(id)) => html! { id },
-                        Self::SessionId(None) => html! { "Not Logged In" },
-                        Self::GaveUp => html! { "Gave Up" },
+                    match self.source.session_id() {
+                        Some(id) => html! { id },
+                        None => html! { "Not Logged In" },
                     }
                 }
             }

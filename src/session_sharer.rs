@@ -1,4 +1,5 @@
 use {
+    super::SessionId,
     gloo_events::EventListener,
     gloo_timers::callback::Timeout,
     serde::{Deserialize, Serialize},
@@ -9,8 +10,6 @@ use {
 };
 
 const CHANNEL_NAME: &str = "session-sharer";
-
-type SessionId = u64;
 
 fn origin() -> &'static str {
     static ORIGIN: OnceLock<String> = OnceLock::new();
@@ -85,31 +84,19 @@ impl IdSender {
     }
 }
 
-// TODO: Make the receiver be an enum that is like super::Client in
-// that it knows the session id itself.  It will then only need a
-// message that it sends when it transitions from Trying to SessionId
-// or GaveUp.  Then it can have a session_id method that returns an
-// Option<SessionId>.
-
 #[allow(dead_code)]
-#[derive(Debug)]
-pub(crate) struct IdReceiver(IdChannel, Timeout);
+struct IdReceiver(IdChannel, Timeout);
 
 impl IdReceiver {
-    pub(crate) fn new<T>(
-        link: &Scope<T>,
-        rcv: fn(Option<SessionId>) -> T::Message,
-        tmo_msg: T::Message,
-    ) -> Self
+    pub fn new<T>(link: &Scope<T>, pass: fn(Passthrough) -> T::Message) -> Self
     where
         T: Component,
-        T::Message: Clone,
     {
         let channel = {
             let link = link.clone();
             IdChannel::new(move |message, _channel| {
                 if let Message::Response(id) = message {
-                    link.send_message(rcv(id))
+                    link.send_message(pass(Passthrough::Id(id)));
                 }
             })
         };
@@ -117,11 +104,50 @@ impl IdReceiver {
 
         let timeout = {
             let link = link.clone();
-            let tmo_msg = tmo_msg.clone();
             Timeout::new(10, move || {
-                link.send_message(tmo_msg.clone());
+                link.send_message(pass(Passthrough::TimedOut));
             })
         };
         Self(channel, timeout)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Passthrough {
+    Id(Option<SessionId>),
+    TimedOut,
+}
+
+pub(crate) enum Source {
+    #[allow(dead_code)]
+    Trying(IdReceiver),
+    SessionId(Option<SessionId>),
+    GaveUp,
+}
+
+impl Source {
+    pub(crate) fn new<T>(link: &Scope<T>, pass: fn(Passthrough) -> T::Message) -> Self
+    where
+        T: Component,
+    {
+        Self::Trying(IdReceiver::new(link, pass))
+    }
+
+    pub(crate) fn session_id(&self) -> Option<SessionId> {
+        use Source::*;
+
+        match self {
+            Trying(_) | GaveUp => None,
+            SessionId(id) => *id,
+        }
+    }
+
+    pub(crate) fn update(&mut self, arg: Passthrough) {
+        use Passthrough::*;
+
+        match arg {
+            Id(id) => *self = Source::SessionId(id),
+            TimedOut => *self = Source::GaveUp,
+        }
     }
 }
