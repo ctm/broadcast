@@ -1,3 +1,17 @@
+# A Tiny Bit More than Yew Trunk Template
+
+Nothing to see here. It's basically just the Yew Trunk Template,
+although I added a "/client" path that requests a "session id" from a
+"non-client" tab or window and displays it once it's received.
+
+This is code I "proof-of-concept"ed here and then incorporated into
+[mb2](https://ctm.github.io/docs/players_manual/).  I improved it a
+bit once it was in mb2 but I never deleted (or updated) this
+repository.  Now, I want to discuss it at an Albuquerque Rust
+Get-together, so I've uploaded it to GitHub as a public repository
+even though it's hack-and-slash.
+
+
 # Yew Trunk Template
 
 This is a fairly minimal template for a Yew app that's built with [Trunk].
